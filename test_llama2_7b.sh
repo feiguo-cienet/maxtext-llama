@@ -7,7 +7,10 @@
 # 1. Download the checkpoint from Meta (https://llama.meta.com/llama-downloads/) in your local directory. Convert this PyTorch checkpoint into Orbax checkpoint format for use in MaxText.
 # 2. Run training of Llama2-7b.
 # 3. Run decoding from the trained checkpoint.
-
+git clone https://github.com/AI-Hypercomputer/maxtext
+cd maxtext/
+git reset --hard 39a3f19e832016741be803ef5253333e2f434cb8
+bash setup.sh
 
 set -ex
 idx=$(date +%Y-%m-%d-%H-%M)
