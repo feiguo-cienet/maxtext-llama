@@ -1,5 +1,9 @@
 #!/bin/bash
 
+#  Install CUDA Toolkit if not
+sudo apt update
+sudo apt-get -y install cuda-toolkit-12-4
+export CUDA_HOME=/usr/local/cuda
 
 # This file is both an integration test that runs once a day on a A3 and documentation for how to get started with Llama2-7b
 
@@ -9,8 +13,9 @@
 # 3. Run decoding from the trained checkpoint.
 git clone https://github.com/AI-Hypercomputer/maxtext
 cd maxtext/
-git reset --hard 39a3f19e832016741be803ef5253333e2f434cb8
-bash setup.sh
+# git reset --hard 39a3f19e832016741be803ef5253333e2f434cb8
+export DEVICE=gpu
+bash setup.sh MODE=stable JAX_VERSION=0.4.35 DEVICE=gpu
 
 set -ex
 idx=$(date +%Y-%m-%d-%H-%M)
@@ -28,6 +33,7 @@ export META_CHECKPOINT_PATH=gs://cienet-maxtext-llama/llama2-7b/meta-ckpt
 # In the following command, we are copying Meta's checkpoint into a local directory `tmp`.
 # You can use a different local directory than /tmp/, if you do so, please use the same local path for `base-model-path` when running `python3 MaxText/llama_or_mistral_ckpt.py`
 gcloud storage cp -r ${META_CHECKPOINT_PATH} /tmp/
+
 
 # `CONVERTED_CHECKPOINT_PATH` is the path to the GCS bucket where we want to save our converted (Orbax) checkpoint. Non-Googlers please remember to point `CONVERTED_CHECKPOINT_PATH` to a GCS bucket that you own
 export CONVERTED_CHECKPOINT_PATH=gs://cienet-maxtext-llama/test/${idx}/decode-ckpt-maxtext-gpu
@@ -51,9 +57,14 @@ for ARGUMENT in "$@"; do
     export "$KEY"="$VALUE"
 done
 
+export RUN_NAME = "llama-2-1vm-slurm"
+export XLA_PYTHON_CLIENT_PREALLOCATE=true
+export XLA_PYTHON_CLIENT_MEM_FRACTION=0.9
+export TF_FORCE_GPU_ALLOW_GROWTH=true
 
-export XLA_FLAGS="--xla_dump_to=$BASE_OUTPUT_PATH/$RUN_NAME/HLO_dumps/
---xla_gpu_enable_latency_hiding_scheduler=true --xla_gpu_enable_triton_gemm=false
+
+export XLA_FLAGS="--xla_dump_to=./hlo_dumps/
+--xla_gpu_enable_latency_hiding_scheduler=false --xla_gpu_enable_triton_gemm=false
  --xla_gpu_graph_level=0 --xla_gpu_enable_highest_priority_async_stream=true
  --xla_gpu_all_reduce_combine_threshold_bytes=134217728 --xla_gpu_all_gather_combine_threshold_bytes=134217728
  --xla_gpu_reduce_scatter_combine_threshold_bytes=67108864 --xla_gpu_enable_pipelined_all_gather=true
@@ -62,10 +73,8 @@ export XLA_FLAGS="--xla_dump_to=$BASE_OUTPUT_PATH/$RUN_NAME/HLO_dumps/
  --xla_gpu_enable_all_gather_combine_by_dim=false --xla_gpu_enable_reduce_scatter_combine_by_dim=false
  --xla_disable_hlo_passes=rematerialization"
 
-python MaxText/train.py MaxText/configs/base.yml run_name=$RUN_NAME hardware=gpu steps=30 dcn_data_parallelism=1 ici_fsdp_parallelism=8 per_device_batch_size=4 max_target_length=4096 model_name=llama2-7b enable_checkpointing=true attention=cudnn_flash_te remat_policy=minimal_flash use_iota_embed=true scan_layers=false dataset_type=synthetic async_checkpointing=${ASYNC_CHECKPOINTING} base_output_directory=$BASE_OUTPUT_DIRECTORY
-# python MaxText/train.py MaxText/configs/base.yml run_name=$RUN_NAME hardware=gpu steps=30 max_target_length=4096 model_name=llama2-7b enable_checkpointing=true attention=cudnn_flash_te remat_policy=minimal_flash use_iota_embed=true scan_layers=false dataset_type=synthetic async_checkpointing=${ASYNC_CHECKPOINTING} base_output_directory=$BASE_OUTPUT_DIRECTORY
+python3 MaxText/train.py MaxText/configs/base.yml run_name=$RUN_NAME hardware=gpu steps=30  per_device_batch_size=4 max_target_length=4096 model_name=llama2-7b enable_checkpointing=true attention=cudnn_flash_te remat_policy=minimal_flash use_iota_embed=true scan_layers=false dataset_type=synthetic async_checkpointing=${ASYNC_CHECKPOINTING} base_output_directory=$BASE_OUTPUT_DIRECTORY
+# python3 MaxText/train.py MaxText/configs/base.yml run_name=$RUN_NAME hardware=gpu steps=30 max_target_length=4096 model_name=llama2-7b enable_checkpointing=true attention=cudnn_flash_te remat_policy=minimal_flash use_iota_embed=true scan_layers=false dataset_type=synthetic async_checkpointing=${ASYNC_CHECKPOINTING} base_output_directory=$BASE_OUTPUT_DIRECTORY
 
-export XLA_PYTHON_CLIENT_MEM_FRACTION=0.65
-export TF_FORCE_GPU_ALLOW_GROWTH=true
 
 python3 MaxText/decode.py MaxText/configs/base.yml load_parameters_path=${BASE_OUTPUT_DIRECTORY}/${RUN_NAME}/checkpoints/0/items run_name=runner_decode_finetuned_${idx} base_output_directory=${BASE_OUTPUT_DIRECTORY} per_device_batch_size=1 model_name='llama2-7b' ici_autoregressive_parallelism=4 max_prefill_predict_length=4  max_target_length=16 prompt="I love to" attention=dot_product scan_layers=false hardware=gpu async_checkpointing=${ASYNC_CHECKPOINTING}
