@@ -54,10 +54,7 @@ deployment_groups:
     - docker_install
     settings:
       partition_name: debug
-      max_node_count: 4
-      enable_placement: false
       exclusive: false
-      machine_type: n2-standard-2
 
   - source: modules/scripts/startup-script
     kind: terraform
@@ -131,8 +128,16 @@ deployment_groups:
     - g2_partition
     - docker_install
     settings:
-      login_node_count: 1
-      suspend_time: 60
+      enable_controller_public_ips: true
+      compute_startup_script: $(startup_script.startup_script)
+      compute_startup_scripts_timeout: 21600
+      controller_startup_script: $(startup_script.startup_script)
+      controller_startup_scripts_timeout: 21600
+      login_startup_script: $(startup_script.startup_script)
+      login_startup_scripts_timeout: 21600
+      instance_image: 
+        family: $(vars.new_image_family)
+        project: $(vars.project_id)
 
   - source: community/modules/scheduler/schedmd-slurm-gcp-v6-login
     kind: terraform
@@ -141,3 +146,7 @@ deployment_groups:
     - network1
     - homefs
     - slurm_controller
+    machine_type: n2-standard-4
+    instance_image: 
+      family: $(vars.new_image_family)
+      project: $(vars.project_id)
