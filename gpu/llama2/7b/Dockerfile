@@ -18,4 +18,5 @@ ENV XLA_FLAGS="--xla_dump_to=./hlo_dumps --xla_dump_hlo_pass_re=.* \
  --xla_gpu_enable_all_gather_combine_by_dim=false --xla_gpu_enable_reduce_scatter_combine_by_dim=false \
  --xla_disable_hlo_passes=rematerialization"
 
-ENTRYPOINT ["python3 maxtext/MaxText/train.py maxtext/MaxText/configs/base.yml run_name=cienet-maxtext-llama-2-1vm-run hardware=gpu steps=10 dcn_data_parallelism=1 ici_fsdp_parallelism=8 per_device_batch_size=1 max_target_length=4096   enable_checkpointing=true attention=cudnn_flash_te remat_policy=minimal_flash use_iota_embed=true scan_layers=false dataset_type=synthetic async_checkpointing=false base_output_directory=gs://cienet-maxtext-llama-logger"]
+ ENTRYPOINT ["python3", "/deps/maxtext/MaxText/train.py", "/deps/maxtext/MaxText/configs/base.yml"]
+ CMD ["run_name=cienet-maxtext-llama-2-1vm-run", "hardware=gpu", "steps=10", "dcn_data_parallelism=1", "ici_fsdp_parallelism=8", "per_device_batch_size=1",  "max_target_length=4096",  "enable_checkpointing=true",  "attention=cudnn_flash_te",  "remat_policy=minimal_flash",  "use_iota_embed=true",  "scan_layers=false",  "async_checkpointing=false", "dataset_type=synthetic", "base_output_directory=gs://cienet-maxtext-llama-logger"]
