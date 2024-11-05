@@ -176,7 +176,7 @@ deployment_groups:
           docker run --rm  --privileged --gpus all  --shm-size 2g us-docker.pkg.dev/hpc-test-2-438108/maxtext-base-image/llama2-7b
           JOB
 
-  - group: packer
+- group: packer
   modules:
   - id: custom-image
     source: modules/packer/custom-image
