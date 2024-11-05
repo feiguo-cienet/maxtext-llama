@@ -131,7 +131,7 @@ deployment_groups:
   - id: data_bucket
     source: community/modules/file-system/cloud-storage-bucket
     settings:
-      name_prefix: $(vars.bucket_model)
+      name_prefix: llama2
       random_suffix: true
       local_mount: /data_bucket
       mount_options: defaults,_netdev,implicit_dirs,allow_other,dir_mode=0777,file_mode=766
@@ -146,9 +146,19 @@ deployment_groups:
         destination: "/tmp/docker.sh"
         content: |
           #!/bin/sh
-          yum install -y yum-utils
-          yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-          yum install -y docker-ce docker-ce-cli containerd.io
+          sudo apt update
+          sudo apt-get install ca-certificates curl
+          sudo install -m 0755 -d /etc/apt/keyrings
+          sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+          sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+          # Add the repository to Apt sources:
+          echo \
+            "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian \
+            $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+            sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install docker-ce docker-ce-cli containerd.io
           systemctl start docker
           systemctl enable docker
           usermod -aG docker <oslogin_user_id>
@@ -162,7 +172,7 @@ deployment_groups:
         destination: startup-script.sh
         content: |
           #!/bin/bash
-          tee train.job << JOB
+          tee ~/train.job << JOB
           #!/bin/bash
           #SBATCH --job-name=llama2-maxtext-train
           #SBATCH --ntasks-per-node=1
@@ -183,7 +193,7 @@ deployment_groups:
     kind: packer
     use:
     - network1
-    - packer_script
+    - docker_install
     settings:
       source_image_project_id: [schedmd-slurm-public]
       source_image_family: slurm-gcp-6-6-debian-11
