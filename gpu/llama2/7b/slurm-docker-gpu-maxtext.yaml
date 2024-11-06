@@ -124,7 +124,7 @@ deployment_groups:
     settings:
       local_mounts: [/home]
       disk_size: 2560
-      instance_image:  
+      instance_image:
         project: "cloud-hpc-image-public"
         family:  "hpc-rocky-linux-8"
 
@@ -135,33 +135,43 @@ deployment_groups:
       random_suffix: true
       local_mount: /data_bucket
       mount_options: defaults,_netdev,implicit_dirs,allow_other,dir_mode=0777,file_mode=766
+      force_destroy: true
+
+  - id: move_files
+    source: ./files
+    use: [data_bucket]
+
 
   ## Install Scripts
-  - id: docker_install
+
+  - id: packer_script
     source: modules/scripts/startup-script
-    kind: terraform
     settings:
+      install_docker: true
+      enable_docker_world_writable: true
       runners:
       - type: shell
         destination: "/tmp/docker.sh"
         content: |
-          #!/bin/sh
-          sudo apt update
-          sudo apt-get install ca-certificates curl
-          sudo install -m 0755 -d /etc/apt/keyrings
-          sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
-          sudo chmod a+r /etc/apt/keyrings/docker.asc
+          #!/bin/bash
+          # this script is designed to execute on Slurm images published by SchedMD that:
+          # - are based on Debian 11 distribution of Linux
+          # - have NVIDIA Drivers v530 pre-installed
+          # - have CUDA Toolkit 12.1 pre-installed.
+          set -e -o pipefail
 
-          # Add the repository to Apt sources:
-          echo \
-            "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian \
-            $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-            sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+          sudo curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg \
+            && curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+            sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+            sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+
           sudo apt-get update
-          sudo apt-get install docker-ce docker-ce-cli containerd.io
-          systemctl start docker
-          systemctl enable docker
-          usermod -aG docker <oslogin_user_id>
+          sudo apt-get install -y nvidia-container-toolkit
+          sudo nvidia-ctk runtime configure --runtime=docker
+          sudo systemctl restart docker
+
+          gcloud auth configure-docker us-docker.pkg.dev --quiet
+          sudo docker pull us-docker.pkg.dev/hpc-test-2-438108/maxtext-base-image/llama2-7b
 
   - id: startup_script
     source: modules/scripts/startup-script
@@ -172,19 +182,25 @@ deployment_groups:
         destination: startup-script.sh
         content: |
           #!/bin/bash
-          tee ~/train.job << JOB
-          #!/bin/bash
-          #SBATCH --job-name=llama2-maxtext-train
-          #SBATCH --ntasks-per-node=1
-          #SBATCH --cpus-per-task=1
-          #SBATCH --mem-per-cpu=2
-          #SBATCH --partition=g2gpu8
-          #SBATCH --array=1-10
-          #SBATCH --output=out_%3A_%3a.txt
-          #SBATCH --error=err_%3A_%3a.txt
+          CONDA_BASE=/opt/conda
+          source $CONDA_BASE/bin/activate base
+          conda init --system
 
-          docker run --rm  --privileged --gpus all  --shm-size 2g us-docker.pkg.dev/hpc-test-2-438108/maxtext-base-image/llama2-7b
-          JOB
+          # UnInstall Stackdriver Agent
+
+          sudo systemctl stop stackdriver-agent.service
+          sudo systemctl disable stackdriver-agent.service
+          curl -sSO https://dl.google.com/cloudagents/add-monitoring-agent-repo.sh
+          sudo dpkg --configure -a
+          sudo bash add-monitoring-agent-repo.sh --uninstall
+          sudo bash add-monitoring-agent-repo.sh --remove-repo
+
+          # Install ops-agent
+
+          curl -sSO https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh
+          sudo bash add-google-cloud-ops-agent-repo.sh --also-install
+          sudo service google-cloud-ops-agent start
+          sudo DEBUG=1 google_metadata_script_runner startup
 
 - group: packer
   modules:
@@ -193,7 +209,7 @@ deployment_groups:
     kind: packer
     use:
     - network1
-    - docker_install
+    - packer_script
     settings:
       source_image_project_id: [schedmd-slurm-public]
       source_image_family: slurm-gcp-6-6-debian-11
@@ -235,10 +251,10 @@ deployment_groups:
       name_prefix: login
       machine_type: n2-standard-4
       enable_login_public_ips: true
-      instance_image: 
+      instance_image:
         family: $(vars.new_image_family)
         project: $(vars.project_id)
-        
+
 
   - id: slurm_controller
     source: community/modules/scheduler/schedmd-slurm-gcp-v6-controller
@@ -256,6 +272,6 @@ deployment_groups:
       controller_startup_scripts_timeout: 21600
       login_startup_script: $(startup_script.startup_script)
       login_startup_scripts_timeout: 21600
-      instance_image: 
+      instance_image:
         family: $(vars.new_image_family)
         project: $(vars.project_id)

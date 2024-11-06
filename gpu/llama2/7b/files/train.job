@@ -1,0 +1,10 @@
+#!/bin/bash
+
+#SBATCH --job-name=llama2-maxtext-train
+#SBATCH --nodes=1
+#SBATCH --partition=g2gpu8
+#SBATCH --output=output.txt
+#SBATCH --error=err.txt
+#SBATCH --time=1:00:00
+
+docker run --privileged --gpus all --shm-size 2g us-docker.pkg.dev/hpc-test-2-438108/maxtext-base-image/llama2-7b
