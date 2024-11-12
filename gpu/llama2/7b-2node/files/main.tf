@@ -33,3 +33,13 @@ resource "google_storage_bucket_object" "slurm_batch_object" {
   bucket  = local.bucket
   content = data.local_file.slurm_batch.content
 }
+
+# Training start script
+data "local_file" "train_start" {
+  filename = "${path.module}/train.sh"
+}
+resource "google_storage_bucket_object" "train_start_object" {
+  name = "train.sh"
+  bucket  = local.bucket
+  content = data.local_file.train_start.content
+}
