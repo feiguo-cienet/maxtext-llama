@@ -1,0 +1,113 @@
+{{- $image_version := "" }}
+{{- $namespace := "" }}
+{{- $appPrefix := "" }}
+{{- $jobName := "" }}
+{{- $i := "" }}
+{{- $current := "" }}
+{{- $affinity := "" }}
+{{- $imagepullsecret := "" }}
+{{- $resources := "" }}
+{{- $args := ""}}
+{{- $start := 0 }}
+{{- $nproc_per_node := 1 }}
+{{- $nnodes := 0 }}
+
+{{- $nproc_per_node := .Values.MultiprocessingDistributed.nproc_per_node | int  }}
+{{- $nnodes := .Values.MultiprocessingDistributed.replicas | int  }}
+{{- $image_version = printf "%s:%s" .Values.baseImage.repository .Values.baseImage.tag }}
+{{- $namespace = .Release.Namespace | toString }}
+{{- $appPrefix = .Values.appPrefix | toString }}
+
+{{- with .Values.imagePullSecrets }}
+    {{- $imagepullsecret = toYaml . | nindent 8 }}
+{{- end }}
+
+{{- with .Values.MultiprocessingDistributed.affinity }}
+    {{- $affinity = toYaml . | nindent 12 }}
+{{- end }}
+
+{{- with .Values.MultiprocessingDistributed.resources }}
+    {{- $resources = toYaml . | nindent 12 }}
+{{- end }}
+
+{{- with .Values.MultiprocessingDistributed.args }}
+    {{- $args = toYaml . | nindent 12 }}
+{{- end }}
+
+{{- range untilStep $start $nnodes 1 }}
+  {{- $i = . | toString }}
+  {{- $jobName = print $appPrefix "-" $i }}
+  {{- $current = print $jobName "." $appPrefix "." $namespace ".svc.cluster.local:5005" | quote }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $jobName }}
+  namespace: {{ $namespace }}
+  labels:
+    app: {{ $appPrefix }}
+spec:
+  ttlSecondsAfterFinished: 20
+  template:
+    metadata:
+      labels:
+        app: {{ $appPrefix }}
+    spec:
+      affinity:
+    {{ $affinity }}
+      imagePullSecrets:
+    {{ $imagepullsecret }}
+      subdomain: {{ $appPrefix }}
+      hostname: {{ $jobName }}
+      restartPolicy: Never
+      containers:
+        - name: {{ $jobName }}
+          image: {{ $image_version }}
+          imagePullPolicy: Always
+          resources:
+        {{- $resources }}
+          ports:
+            - name: workers
+              containerPort: 6222
+          args:
+        {{ $args }}
+          env:
+            - name: JAX_COORDINATOR_IP
+              value: {{ print $appPrefix "-0." $appPrefix "." $namespace ".svc.cluster.local" | quote }}
+            - name: NODE_RANK
+              value: "{{ $i }}"
+            # - name: HEAD_PORT
+            #   value: "6222"
+            # - name: HEAD_ADDR
+            #   value: {{ print "tcp://" $appPrefix "-0." $appPrefix "." $namespace ".svc.cluster.local" | quote }}
+            # - name: WORLD_SIZE
+            #   value: "{{ $nnodes }}"
+            # - name: RANK
+            #   value: "{{ $i }}"
+            # - name: LOCAL_RANK
+            #   value: "{{ $i }}"
+            # - name: NCCL_DEBUG
+            #   value: INFO
+            # - name: CUDA_LAUNCH_BLOCKING
+            #   value: "0"
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+            # - name: data
+            #   mountPath: /workspace/data
+    {{ if gt . 0 }}
+      initContainers:
+        - name: "init-{{ $jobName }}-connection"
+          image: busybox:1.28
+          command: ['sh', '-c', 'until nslookup {{ print $appPrefix "-0." $appPrefix "." $namespace ".svc.cluster.local" | quote }}; do echo waiting for head node...; sleep 10; done']
+    {{- end }}
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
+        # - name: data
+        #   persistentVolumeClaim:
+        #     claimName: {{ $appPrefix }}
+      serviceAccountName: maxtext-gke-l4
+{{- end }}

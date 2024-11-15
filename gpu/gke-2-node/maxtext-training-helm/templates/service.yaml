@@ -1,0 +1,17 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.appPrefix }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: {{ .Values.appPrefix }}
+  annotations:
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  ports:
+    - name: workers
+      port: 6222
+  clusterIP: None
+  selector:
+    app: {{ .Values.appPrefix }}

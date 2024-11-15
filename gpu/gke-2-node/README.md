@@ -1,15 +1,9 @@
+# Maxtext Modeling training with GKE - multiple instances
 
-As part of this tutorial, you will get to do the following:
+You will get to do the following jobs:
 
 *   Create a GKE cluster with an autoscaling L4 GPU nodepool
 *   Run a Kubernetes Job to train Maxtext default model using L4 GPUs
-
-
-## Prerequisites
-*   A terminal with `kubectl` and `gcloud` installed. Cloud Shell works great!
-*   L4 GPUs quota to be able to run additional 8 L4 GPUs
-*   Request access to Meta Llama models by submitting the [request access form](https://ai.meta.com/resources/models-and-libraries/llama-downloads/)
-*   Agree to the Llama 2 terms on the [Llama 2 7B HF](https://huggingface.co/meta-llama/Llama-2-7b-hf) model in HuggingFace
 
 
 ## Creating the GKE cluster with L4 nodepools
@@ -18,10 +12,9 @@ Let’s start by setting a few environment variables that will be used throughou
 Run the following commands to set the env variables and make sure to replace `<my-project-id>`:
 
 ```bash
-gcloud config set project <my-project-id>
 export PROJECT_ID=$(gcloud config get project)
 export REGION=us-central1
-export BUCKET_NAME=${PROJECT_ID}-maxtext-gke-l4
+export BUCKET_NAME=cienet-maxtext-llama-logger
 export SERVICE_ACCOUNT="maxtext-gke-l4@${PROJECT_ID}.iam.gserviceaccount.com"
 ```
 
@@ -35,7 +28,7 @@ gcloud container clusters create maxtext-gke-l4 --location ${REGION} \
   --shielded-secure-boot --shielded-integrity-monitoring \
   --enable-ip-alias \
   --node-locations=${REGION}-a \
-  --labels="ai-on-gke=maxtext-gke-l4" \
+  --labels=ai-on-gke=maxtext-gke-l4 \
   --addons GcsFuseCsiDriver
 ```
 
@@ -48,19 +41,18 @@ gcloud container node-pools create g2-standard-96 --cluster maxtext-gke-l4 \
   --machine-type g2-standard-96 \
   --ephemeral-storage-local-ssd=count=8 \
   --enable-autoscaling --enable-image-streaming \
-  --num-nodes=0 --min-nodes=0 --max-nodes=3 \
+  --num-nodes=2 --min-nodes=2 --max-nodes=2 \
   --shielded-secure-boot \
   --shielded-integrity-monitoring \
-  --node-locations ${REGION}-a,${REGION}-b --region ${REGION}
+  --labels=ai-on-gke=maxtext-gke-l4 \
+  --node-locations ${REGION}-a --region ${REGION}
 ```
-
 
 ## Run a Kubernetes job to train maxtext model
 
-
 ### Configuring GCS and required permissions
 
-Create a GCS bucket to store our models:
+Create GCS bucket to store our models checkpoints and metrics if it's not created:
 ```bash
 gcloud storage buckets create gs://${BUCKET_NAME}
 ```
@@ -70,6 +62,22 @@ The model loading Job will write to GCS. So let’s create a Google Service Acco
 To do this, first create a new Google Service Account:
 ```bash
 gcloud iam service-accounts create maxtext-gke-l4
+
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+    --member='serviceAccount:${SERVICE_ACCOUNT}' \
+    --role='roles/container.admin' \
+    --role='roles/logging.admin' \
+    --role='roles/logging.logWriter' \
+    --role='roles/monitoring.admin' \
+    --role='roles/storage.admin'
+```
+
+Verify the roles are set correctly:
+```bash
+gcloud projects get-iam-policy $PROJECT_ID \
+    --flatten="bindings[].members" \
+    --format='table(bindings.role)' \
+    --filter="bindings.members:${SERVICE_ACCOUNT}"
 ```
 
 Assign the required GCS permissions to the Google Service Account:
@@ -78,13 +86,6 @@ gcloud storage buckets add-iam-policy-binding gs://${BUCKET_NAME} \
   --member="serviceAccount:${SERVICE_ACCOUNT}" --role=roles/storage.admin
 ```
 
-since the model checkpont bucket `gs://cienet-maxtext-llama-logger` is used. Add the permission to this bucket:
-```bash
-gcloud storage buckets add-iam-policy-binding gs://cienet-maxtext-llama-logger \
-  --member="serviceAccount:${SERVICE_ACCOUNT}" --role=roles/storage.admin
-```
-
-
 Allow the Kubernetes Service Account `maxtext-gke-l4` in the `default` namespace to use the Google Service Account:
 ```bash
 gcloud iam service-accounts add-iam-policy-binding ${SERVICE_ACCOUNT} \
@@ -92,29 +93,30 @@ gcloud iam service-accounts add-iam-policy-binding ${SERVICE_ACCOUNT} \
   --member "serviceAccount:${PROJECT_ID}.svc.id.goog[default/maxtext-gke-l4]"
 ```
 
-
 Create a new Kubernetes Service Account:
 ```bash
 kubectl create serviceaccount maxtext-gke-l4
 kubectl annotate serviceaccount maxtext-gke-l4 iam.gke.io/gcp-service-account=maxtext-gke-l4@${PROJECT_ID}.iam.gserviceaccount.com
+kubectl create clusterrolebinding add-on-cluster-admin \
+    --clusterrole=cluster-admin \
+    --serviceaccount=kube-system:default
 ```
 
-
-Let's use a Kubernetes Job to train the model.
-
-Run the model training Job:
+Let's use a Helm to start the training job:
 ```bash
-envsubst < train.yaml | kubectl apply -f -
+helm init
+helm install --name maxtext-training ./maxtext-training-helm
 ```
 
-Verify that the file Job was created and that `$IMAGE` and `$BUCKET_NAME` got replaced with the correct values. A Pod should have been created, which you can verify by running:
+You can monitor the traing job with this command:
 ```bash
-kubectl describe pod -l job-name=model-training-job
+kubectl --namespace default get all -l app="maxtext-training" -o wide
 ```
 
-You should see a `pod triggered scale-up` message under Events after about 30 seconds. Then it will take another 2 minutes for a new GKE node with 8 x L4 GPUs to spin up. Once the Pod gets into running state you can watch the logs of the training:
+Once the Pod gets into running state you can watch the logs of the training:
 ```bash
-kubectl logs -f -l job-name=model-training-job
+kubectl logs -f -l job-name=maxtext-training-0
+kubectl logs -f -l job-name=maxtext-training-1
 ```
 
 You can watch the training steps and observe the loss go down over time.
