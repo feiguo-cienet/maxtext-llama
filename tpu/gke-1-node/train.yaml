@@ -1,0 +1,57 @@
+# Copyright 2023 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: model-training-job
+  namespace: default
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: trainer
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+      - name: trainer
+        image: us-docker.pkg.dev/hpc-test-2-438108/maxtext-base-image/llama2-7b-tpu
+        ports:
+        - containerPort: 8471 # Default port using which TPU VMs communicate
+        - containerPort: 8431 # Port to export TPU runtime metrics, if supported.
+        securityContext:
+          privileged: true
+        # env:
+        # - name: JAX_COORDINATOR_ADDRESS
+        #   value: "model-training-job.model-training-job.default.svc.cluster.local"
+        # - name: PROCESS_ID
+        #   value: "1"
+        volumeMounts:
+        - name: dshm
+          mountPath: /dev/shm
+      serviceAccountName: maxtext-gke-tpu
+      volumes:
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: 2Gi
+      nodeSelector:
+        cloud.google.com/gke-nodepool: tpu-v5e-4
+      restartPolicy: OnFailure
+      hostNetwork: true
+      tolerations:
+      - key: "google.com/tpu"
+        operator: "Exists"
+        effect: "NoSchedule"

@@ -14,13 +14,13 @@
 
 ---
 
-blueprint_name: slurm6-tpu-v4
+blueprint_name: slurm-maxtext-tpu
 
 vars:
   project_id: ## Set GCP Project ID Here ##
-  deployment_name: slurm6-tpu-v4
-  region: us-central2
-  zone: us-central2-b
+  deployment_name: slurm-maxtext-tpu
+  region: us-central1
+  zone: us-central1-a
 
 deployment_groups:
 - group: primary
@@ -36,11 +36,11 @@ deployment_groups:
         destination: tpu_setup.sh
         content: |
           #!/bin/bash
-          mkdir -p /opt/apps/scripts/tpu-test
-          chmod a+rwx /opt/apps/scripts/tpu-test
+          mkdir -p /opt/tpu-test
+          chmod a+rwx /opt/tpu-test
 
       - type: data
-        destination: /opt/apps/scripts/tpu-test/run_maxtext.sh
+        destination: /opt/tpu-test/run_maxtext.sh
         content: |
           #!/bin/bash
           # Update the following parameters in the python3 command in this script.
@@ -49,10 +49,14 @@ deployment_groups:
           # ATTENTION: (i.e. dot_product, flash)
           # STEPS: steps to run (i.e. 100, 1000)
 
+          #SBATCH --job-name=maxtext-train
           #SBATCH --nodes=1
           #SBATCH --ntasks-per-node=1
           #SBATCH --mem=50000
           #SBATCH --partition=tpu
+          #SBATCH --output=output.txt
+          #SBATCH --error=err.txt
+          #SBATCH --time=1:00:00
 
           set -e -o pipefail
 
@@ -64,18 +68,18 @@ deployment_groups:
           # install dependencies.
           git clone https://github.com/google/maxtext
           cd maxtext/
-          git reset --hard 39a3f19e832016741be803ef5253333e2f434cb8
+          # git reset --hard 39a3f19e832016741be803ef5253333e2f434cb8
           bash setup.sh
 
           # Run maxtext benchmark test.
           # (i.e.) python3 MaxText/train.py MaxText/configs/base.yml run_name=1xv4-128 base_output_directory=${PWD}/output/ dataset_path=gs://dataset_tpu/dataset async_checkpointing=False attention=dot_product steps=100
-          python3 MaxText/train.py MaxText/configs/base.yml run_name=<RUN_NAME> base_output_directory=${PWD}/output/ dataset_path=<STORAGE_BUCKET> async_checkpointing=False attention=<ATTENTION> steps=<STEPS>
+          python3 MaxText/train.py MaxText/configs/base.yml run_name=cienet-maxtext-llama-2-tpu-1vm-run base_output_directory=gs://cienet-maxtext-llama-logger dataset_type=synthetic async_checkpointing=False attention=dot_product steps=30
 
   - id: tpu_nodeset
     source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset-tpu
     use: [network]
     settings:
-      node_type: v4-8
+      node_type: v3-8
       tf_version: 2.14.0
       # Preemptible TPUs cost much less than non-preemptible TPUs.
       # The Cloud TPU service might preempt (shut down) these TPUs at any time.
@@ -92,13 +96,14 @@ deployment_groups:
     use: [tpu_nodeset]
     settings:
       partition_name: tpu
+      suspend_timeout: 600
 
   - id: compute_nodeset
     source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
     use: [network]
     settings:
       name: ns2
-      node_count_dynamic_max: 20
+      node_count_dynamic_max: 2
       bandwidth_tier: gvnic_enabled
       allow_automatic_updates: false
 

@@ -64,7 +64,7 @@ To do this, first create a new Google Service Account:
 gcloud iam service-accounts create maxtext-gke-l4
 
 gcloud projects add-iam-policy-binding ${PROJECT_ID} \
-    --member='serviceAccount:${SERVICE_ACCOUNT}' \
+    --member=serviceAccount:${SERVICE_ACCOUNT} \
     --role='roles/container.admin' \
     --role='roles/logging.admin' \
     --role='roles/logging.logWriter' \

@@ -1,0 +1,128 @@
+# Copyright 2022 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+---
+
+blueprint_name: slurm-maxtext-tpu
+
+vars:
+  project_id: ## Set GCP Project ID Here ##
+  deployment_name: slurm-maxtext-tpu
+  region: us-central1
+  zone: us-central1-a
+
+deployment_groups:
+- group: primary
+  modules:
+  - id: network
+    source: modules/network/vpc
+
+  - id: script
+    source: modules/scripts/startup-script
+    settings:
+      enable_docker_world_writable: true
+      install_docker: true
+      runners:
+      - type: shell
+        destination: tpu_setup.sh
+        content: |
+          #!/bin/bash
+          mkdir -p /opt/tpu-test
+          chmod a+rwx /opt/tpu-test
+
+          # Pull image
+          gcloud auth configure-docker us-docker.pkg.dev --quiet
+          sudo docker pull us-docker.pkg.dev/hpc-test-2-438108/maxtext-base-image/llama2-7b-tpu
+
+      - type: data
+        destination: /opt/tpu-test/run_maxtext.sh
+        content: |
+          #!/bin/bash
+
+          #SBATCH --job-name=maxtext-train
+          #SBATCH --nodes=1
+          #SBATCH --partition=tpu
+          #SBATCH --output=output.txt
+          #SBATCH --error=err.txt
+          #SBATCH --time=1:00:00
+
+          srun docker run --rm -it -v /var/run/docker.sock:/var/run/docker.sock  --privileged  --network host us-docker.pkg.dev/hpc-test-2-438108/maxtext-base-image/llama2-7b-tpu
+
+  - id: tpu_nodeset
+    source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset-tpu
+    use: [network]
+    settings:
+      node_type: v3-8
+      tf_version: 2.14.0
+      # Preemptible TPUs cost much less than non-preemptible TPUs.
+      # The Cloud TPU service might preempt (shut down) these TPUs at any time.
+      # https://cloud.google.com/tpu/docs/preemptible
+      preemptible: false
+      # Specify whether to preserve TPU on suspend.
+      # If set to true, suspended VM will be stopped.
+      # If set to false, suspended VM will be deleted.
+      preserve_tpu: false
+      node_count_static: 1
+
+  - id: tpu_partition
+    source: community/modules/compute/schedmd-slurm-gcp-v6-partition
+    use: [tpu_nodeset]
+    settings:
+      partition_name: tpu
+      resume_timeout: 1200
+      suspend_timeout: 1200
+
+  - id: compute_nodeset
+    source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
+    use: [network]
+    settings:
+      name: ns2
+      node_count_dynamic_max: 2
+      bandwidth_tier: gvnic_enabled
+      instance_image:
+        family: slurm-gcp-6-7-debian-11
+        project: schedmd-slurm-public
+
+  - id: compute_partition
+    source: community/modules/compute/schedmd-slurm-gcp-v6-partition
+    use: [compute_nodeset]
+    settings:
+      partition_name: compute
+      is_default: true
+
+  - id: slurm_login
+    source: community/modules/scheduler/schedmd-slurm-gcp-v6-login
+    use: [network]
+    settings:
+      enable_login_public_ips: true
+      machine_type: n2-standard-16
+      instance_image:
+        family: slurm-gcp-6-7-debian-11
+        project: schedmd-slurm-public
+
+  - id: slurm_controller
+    source: community/modules/scheduler/schedmd-slurm-gcp-v6-controller
+    use:
+    - tpu_partition
+    - compute_partition
+    - slurm_login
+    - network
+    settings:
+      enable_controller_public_ips: true
+      machine_type: n2-standard-16
+      login_startup_script: $(script.startup_script)
+      controller_startup_script: $(script.startup_script)
+      compute_startup_script: $(script.startup_script)
+      instance_image:
+        family: slurm-gcp-6-7-debian-11
+        project: schedmd-slurm-public
