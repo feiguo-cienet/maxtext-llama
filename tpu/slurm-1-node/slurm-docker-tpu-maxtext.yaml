@@ -68,8 +68,8 @@ deployment_groups:
           # install dependencies.
           git clone https://github.com/google/maxtext
           cd maxtext/
-          # git reset --hard 39a3f19e832016741be803ef5253333e2f434cb8
-          bash setup.sh
+          git reset --hard 39a3f19e832016741be803ef5253333e2f434cb8
+          bash setup.sh DEVICE=tpu JAX_VERSION=0.4.23
 
           # Run maxtext benchmark test.
           # (i.e.) python3 MaxText/train.py MaxText/configs/base.yml run_name=1xv4-128 base_output_directory=${PWD}/output/ dataset_path=gs://dataset_tpu/dataset async_checkpointing=False attention=dot_product steps=100

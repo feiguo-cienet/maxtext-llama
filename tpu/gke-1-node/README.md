@@ -35,20 +35,6 @@ docker build -t xxxxxx .
 docker push xxxxxx
 ```
 
-### Run with Powerful TPU for Llama 2 model
-
-Update Dockerfile to the below CMD to add model_name
-
-```bash
-CMD ["run_name=cienet-maxtext-llama-2-tpu-1vm-run", "steps=30",  "attention=dot_product", "dataset_type=synthetic", "base_output_directory=gs://cienet-maxtext-llama-logger"]
-```
-
-changed to
-
-```bash
-CMD ["run_name=cienet-maxtext-llama-2-tpu-1vm-run", "model_name=llama2-7b", "steps=30",  "attention=dot_product", "dataset_type=synthetic", "base_output_directory=gs://cienet-maxtext-llama-logger"]
-```
-
 
 ## Creating the GKE cluster with L4 nodepools
 Let’s start by setting a few environment variables that will be used throughout this post. You should modify these variables to meet your environment and needs.
@@ -67,7 +53,7 @@ export SERVICE_ACCOUNT="maxtext-gke-tpu@${PROJECT_ID}.iam.gserviceaccount.com"
 
 Create the GKE cluster by running:
 ```bash
-gcloud container clusters create maxtext-gke-tpu-v5e --location ${REGION} \
+gcloud container clusters create maxtext-gke-tpu-v5e-cluster --location ${REGION} \
   --workload-pool ${PROJECT_ID}.svc.id.goog \
   --enable-ip-alias \
   --node-locations=${REGION}-c \
@@ -75,16 +61,36 @@ gcloud container clusters create maxtext-gke-tpu-v5e --location ${REGION} \
 ```
 
 
-Let’s create a nodepool for our finetuning which will use TPU v3-8.
-Create the `tpu-v3-8` nodepool by running:
+Let’s create a nodepool for our finetuning which will use TPU v5e.
+Create the `tpuv5e-4` nodepool by running:
 ```bash
-gcloud container node-pools create tpu-v5e-4 --cluster maxtext-gke-tpu-v5e \
+gcloud container node-pools create tpu-v5e-4 --cluster maxtext-gke-tpu-v5e-cluster \
   --machine-type ct5lp-hightpu-4t \
   --num-nodes=1 \
   --node-locations ${REGION}-c \
   --region ${REGION} \
   --scopes storage-rw
 ```
+
+For training Llama 2-7b Model, Create the `tpuv5e-16` nodepool by running:
+```bash
+gcloud container node-pools create tpu-v5e-16 --cluster maxtext-gke-tpu-v5e-cluster \
+  --machine-type ct5lp-hightpu-4t \
+  --tpu-topology 4x4 \
+  --num-nodes=4 \
+  --node-locations ${REGION}-c \
+  --region ${REGION} \
+  --scopes storage-rw
+```
+```bash
+gcloud container node-pools create tpu-v5e-16 --cluster maxtext-gke-tpu-v5e-cluster \
+  --machine-type ct5lp-hightpu-8t \
+  --num-nodes=2 \
+  --node-locations ${REGION}-c \
+  --region ${REGION} \
+  --scopes storage-rw
+```
+
 
 
 ## Run a Kubernetes job to train maxtext model

@@ -36,27 +36,47 @@ spec:
         - containerPort: 8431 # Port to export TPU runtime metrics, if supported.
         securityContext:
           privileged: true
-        # env:
+        resources:
+          requests:
+            google.com/tpu: 8
+          limits:
+            google.com/tpu: 8
+        env:
+        - name: LIBTPU_INIT_ARGS
+          value: "--xla_tpu_enable_data_parallel_all_reduce_opt=true --xla_tpu_data_parallel_opt_different_sized_ops=true --xla_tpu_enable_async_collective_fusion=true --xla_tpu_enable_async_collective_fusion_fuse_all_gather=true --xla_tpu_enable_async_collective_fusion_multiple_steps=true --xla_tpu_overlap_compute_collective_tc=true --xla_enable_async_all_gather=true"
         # - name: JAX_COORDINATOR_ADDRESS
         #   value: "model-training-job.model-training-job.default.svc.cluster.local"
         # - name: PROCESS_ID
         #   value: "1"
-        volumeMounts:
-        - name: dshm
-          mountPath: /dev/shm
-        resources:
-          requests:
-            google.com/tpu: 4
-          limits:
-            google.com/tpu: 4
+        # volumeMounts:
+        # - name: dshm
+        #   mountPath: /dev/shm
+        command: ["python3", "/deps/maxtext/MaxText/train.py", "/deps/maxtext/MaxText/configs/base.yml"]
+        args:
+        - run_name=cienet-maxtext-llama-2-tpu-1vm-run
+        - model_name=llama2-7b
+        - attention=dot_product
+        - remat_policy=save_qkv_proj
+        - use_iota_embed=true
+        - ici_tensor_parallelism=4
+        - max_target_length=1024
+        - tokenizer_path=/deps/maxtext/assets/tokenizer.llama2
+        - dataset_type=synthetic
+        - per_device_batch_size=1
+        - enable_checkpointing=false
+        - async_checkpointing=false
+        - checkpoint_period=5
+        - steps=300
+        - base_output_directory=gs://cienet-maxtext-llama-logger
       serviceAccountName: maxtext-gke-tpu
-      volumes:
-      - name: dshm
-        emptyDir:
-          medium: Memory
-          sizeLimit: 2Gi
+      # volumes:
+      # - name: dshm
+      #   emptyDir:
+      #     medium: Memory
+      #     sizeLimit: 2Gi
       nodeSelector:
-        cloud.google.com/gke-nodepool: tpu-v5e-4
+        cloud.google.com/gke-tpu-accelerator: tpu-v5-lite-podslice
+        cloud.google.com/gke-tpu-topology: 2x4
       restartPolicy: OnFailure
       hostNetwork: true
       tolerations:
