@@ -72,20 +72,11 @@ gcloud container node-pools create tpu-v5e-4 --cluster maxtext-gke-tpu-v5e-clust
   --scopes storage-rw
 ```
 
-For training Llama 2-7b Model, Create the `tpuv5e-16` nodepool by running:
+For training Llama 2-7b Model, Create the `tpuv5e-8` nodepool by running:
 ```bash
-gcloud container node-pools create tpu-v5e-16 --cluster maxtext-gke-tpu-v5e-cluster \
-  --machine-type ct5lp-hightpu-4t \
-  --tpu-topology 4x4 \
-  --num-nodes=4 \
-  --node-locations ${REGION}-c \
-  --region ${REGION} \
-  --scopes storage-rw
-```
-```bash
-gcloud container node-pools create tpu-v5e-16 --cluster maxtext-gke-tpu-v5e-cluster \
+gcloud container node-pools create tpu-v5e-8 --cluster maxtext-gke-tpu-v5e-cluster \
   --machine-type ct5lp-hightpu-8t \
-  --num-nodes=2 \
+  --num-nodes=1 \
   --node-locations ${REGION}-c \
   --region ${REGION} \
   --scopes storage-rw
