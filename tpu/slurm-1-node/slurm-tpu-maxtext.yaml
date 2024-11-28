@@ -68,12 +68,15 @@ deployment_groups:
           # install dependencies.
           git clone https://github.com/google/maxtext
           cd maxtext/
-          git reset --hard 39a3f19e832016741be803ef5253333e2f434cb8
-          bash setup.sh DEVICE=tpu JAX_VERSION=0.4.23
+
+          # remove lines for apt install from setup.sh
+          sed  '/^(sudo bash.*$/,/^EOF$/d'  setup.sh > setup1.sh
+          # git reset --hard 39a3f19e832016741be803ef5253333e2f434cb8
+          bash setup1.sh DEVICE=tpu
 
           # Run maxtext benchmark test.
-          # (i.e.) python3 MaxText/train.py MaxText/configs/base.yml run_name=1xv4-128 base_output_directory=${PWD}/output/ dataset_path=gs://dataset_tpu/dataset async_checkpointing=False attention=dot_product steps=100
-          python3 MaxText/train.py MaxText/configs/base.yml run_name=cienet-maxtext-llama-2-tpu-1vm-run base_output_directory=gs://cienet-maxtext-llama-logger dataset_type=synthetic async_checkpointing=False attention=dot_product steps=30
+          # (i.e.) python3 MaxText/train.py MaxText/configs/base.yml run_name=1xv4-128 base_output_directory=${PWD}/output/ dataset_path=gs://dataset_tpu/dataset async_checkpointing=False attention=dot_product steps=60
+          python3 MaxText/train.py MaxText/configs/base.yml run_name=cienet-maxtext-llama-2-tpu-1vm-run base_output_directory=gs://cienet-maxtext-llama-logger dataset_type=synthetic enable_checkpointing=False async_checkpointing=False attention=dot_product steps=60
 
   - id: tpu_nodeset
     source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset-tpu
@@ -96,7 +99,7 @@ deployment_groups:
     use: [tpu_nodeset]
     settings:
       partition_name: tpu
-      suspend_timeout: 600
+      suspend_timeout: 1200
 
   - id: compute_nodeset
     source: community/modules/compute/schedmd-slurm-gcp-v6-nodeset
@@ -132,3 +135,4 @@ deployment_groups:
       enable_controller_public_ips: true
       machine_type: n2-standard-16
       login_startup_script: $(script.startup_script)
+      controller_startup_script: $(script.startup_script)
