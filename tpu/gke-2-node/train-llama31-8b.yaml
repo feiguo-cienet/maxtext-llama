@@ -1,0 +1,85 @@
+# Copyright 2023 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: jobset.x-k8s.io/v1alpha2
+kind: JobSet
+metadata:
+  name: model-training-maxtext-jobset
+  namespace: default
+  annotations:
+    alpha.jobset.sigs.k8s.io/exclusive-topology: cloud.google.com/gke-nodepool
+spec:
+  failurePolicy:
+    maxRestarts: 4
+  replicatedJobs:
+    - name: model-training-maxtext
+      replicas: 2  # slice number
+      template:
+        spec:
+          backoffLimit: 0
+          completions: 1 # node number
+          parallelism: 1
+          # completionMode: Indexed
+          template:
+            metadata:
+              annotations:
+                kubectl.kubernetes.io/default-container: trainer
+            spec:
+              terminationGracePeriodSeconds: 60
+              containers:
+              - name: model-training-maxtext
+                image: us-docker.pkg.dev/hpc-test-2-438108/maxtext-base-image/llama2-7b-tpu
+                ports:
+                - containerPort: 8471 # Default port using which TPU VMs communicate
+                - containerPort: 8431 # Port to export TPU usage metrics, if supported
+                - containerPort: 8080
+                securityContext:
+                  privileged: true
+                resources:
+                  requests:
+                    google.com/tpu: 8
+                  limits:
+                    google.com/tpu: 8
+                env:
+                # - name: LIBTPU_INIT_ARGS
+                #   value: "--xla_tpu_enable_data_parallel_all_reduce_opt=true --xla_tpu_data_parallel_opt_different_sized_ops=true --xla_tpu_enable_async_collective_fusion=true --xla_tpu_enable_async_collective_fusion_fuse_all_gather=true --xla_tpu_enable_async_collective_fusion_multiple_steps=true --xla_tpu_overlap_compute_collective_tc=true --xla_enable_async_all_gather=true"
+                command: ["python3", "/deps/maxtext/MaxText/train.py", "/deps/maxtext/MaxText/configs/base.yml"]
+                args:
+                - run_name=cienet-maxtext-llama-2-tpu-2vm-run
+                - model_name=llama3.1-8b
+                - attention=dot_product
+                - remat_policy=save_qkv_proj
+                - use_iota_embed=true
+                - dcn_data_parallelism=2
+                - ici_fsdp_parallelism=2
+                - ici_tensor_parallelism=4
+                - max_target_length=1024
+                - tokenizer_path=/deps/maxtext/assets/tokenizer_llama3.tiktoken
+                - dataset_type=synthetic
+                - per_device_batch_size=1
+                - enable_checkpointing=false
+                - async_checkpointing=false
+                - checkpoint_period=5
+                - steps=300
+                - base_output_directory=gs://cienet-maxtext-llama-logger
+              serviceAccountName: maxtext-gke-tpu
+              nodeSelector:
+                cloud.google.com/gke-tpu-accelerator: tpu-v5-lite-podslice
+                cloud.google.com/gke-tpu-topology: 2x4
+              restartPolicy: Never
+              # hostNetwork: true
+              tolerations:
+              - key: "google.com/tpu"
+                operator: "Exists"
+                effect: "NoSchedule"

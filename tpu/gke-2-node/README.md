@@ -4,7 +4,7 @@ You will get to do the following jobs:
 
 *   Build Docker Image for Maxtext Model Training
 *   Create a GKE cluster with multiple sclices TPU nodepool
-*   Run a Kubernetes JobSet to train Maxtext default model using TPU
+*   Run a Kubernetes JobSet to train Maxtext llama2-7b/llama3.1-8b model using TPU
 
 ## Build Maxtext Model Training Image
 
@@ -79,6 +79,16 @@ gcloud container node-pools create tpu-v5e-8-1 --cluster maxtext-gke-tpu-v5e-clu
   --scopes storage-rw
 ```
 
+Need update the default node pool to install the JobSet:
+```bash
+gcloud container node-pools update default-pool \
+    --cluster maxtext-gke-tpu-v5e-cluster \
+    --machine-type n2-standard-4 \
+    --disk-type pd-balanced \
+    --disk-size 100 \
+    --region ${REGION}
+```
+
 
 ## Run a Kubernetes job to train maxtext model
 
@@ -144,11 +154,11 @@ kubectl annotate serviceaccount maxtext-gke-tpu iam.gke.io/gcp-service-account=m
 ```
 
 
-Let's use a Kubernetes JobSet to train the model.
+Let's use a Kubernetes JobSet to train the model using multiple slices TPU.
 
 Install the JobSet CRD:
 ```bash
-VERSION=v0.7.0
+export VERSION=v0.7.0
 kubectl apply --server-side -f https://github.com/kubernetes-sigs/jobset/releases/download/$VERSION/manifests.yaml
 
 ```
