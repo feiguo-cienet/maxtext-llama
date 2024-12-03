@@ -182,3 +182,8 @@ kubectl logs -f -l job-name=model-training-maxtext-jobset-model-training-maxtext
 ```
 
 You can watch the training steps and observe the loss go down over time.
+
+To stop the training job:
+```bash
+kubectl delete -f train-llama2-7b.yaml
+```

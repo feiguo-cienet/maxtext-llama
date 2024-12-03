@@ -61,7 +61,8 @@ spec:
                 - attention=dot_product
                 - remat_policy=save_qkv_proj
                 - use_iota_embed=true
-                - dcn_data_parallelism=2
+                - dcn_data_parallelism=1
+                - dcn_pipeline_parallelism=2
                 - ici_fsdp_parallelism=2
                 - ici_tensor_parallelism=4
                 - max_target_length=1024
@@ -71,7 +72,7 @@ spec:
                 - enable_checkpointing=false
                 - async_checkpointing=false
                 - checkpoint_period=5
-                - steps=300
+                - steps=200
                 - base_output_directory=gs://cienet-maxtext-llama-logger
               serviceAccountName: maxtext-gke-tpu
               nodeSelector:
